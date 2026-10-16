@@ -12,7 +12,7 @@ def load_pixels() -> tuple[tuple[tuple[int, ...], ...], ...]:
     """픽셀 데이터를 한 번 읽어 RGB 값으로 보관한다."""
     data = json.loads(files("bukang").joinpath("bukang.pixels.json").read_text())
     return tuple(
-        tuple(tuple(bytes.fromhex(row[x:x + 6])) for x in range(0, len(row), 6))
+        tuple(tuple(bytes.fromhex(row[x : x + 6])) for x in range(0, len(row), 6))
         for row in data["rows"]
     )
 

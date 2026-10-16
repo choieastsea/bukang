@@ -17,3 +17,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bukang"]
+
+[dependency-groups]
+def = [
+    "ruff>=0.17.1",
+]
