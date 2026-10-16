@@ -5,6 +5,7 @@ import shlex
 import sys
 from pathlib import Path
 from typing import cast
+from uuid import UUID
 
 import click
 
@@ -71,10 +72,6 @@ class BukangGroup(click.Group):
                 ("run", "🦈 컨테이너를 실행하고, 끝날 때까지 기다린다부우우-"),
                 ("run -d", "🦈 컨테이너를 백그라운드로 실행한다크아앙!"),
                 ("ps", "🦈 저장된 컨테이너와 현재 실행 여부를 보여드린다부우우-"),
-            ])
-        with formatter.section("준비 중인 명령"):
-            formatter.write_dl([
-                ("stop", "🦈 컨테이너에 종료를 요청한다크아앙!"),
                 ("rm", "🦈 종료된 컨테이너의 파일과 남은 자원을 정리한다부우우-"),
             ])
         formatter.write_paragraph()
@@ -171,3 +168,20 @@ def ps() -> None:
         pid = str(container.pid) if running else "-"
         command = shlex.join(container.command).replace("\n", "\\n").replace("\r", "\\r")
         click.echo(f"{container.id:36}  {pid:>8}  {status}  {command}")
+
+
+@main.command(help="🦈 종료된 컨테이너의 파일과 cgroup을 삭제한다부우우-")
+@click.argument("container_id", type=click.UUID)
+@click.help_option("--help", help="🦈 컨테이너 삭제 방법을 보여드린다부우우-")
+def rm(container_id: UUID) -> None:
+    """UUID로 지정한 컨테이너를 삭제하고 결과를 출력한다"""
+    if sys.platform != "linux":
+        raise click.ClickException("🦈 컨테이너 삭제는 Linux에서 가능하다부우우-")
+
+    from bukang.core import runtime
+
+    try:
+        runtime.remove(str(container_id))
+    except (OSError, ValueError, TypeError, RuntimeError) as error:
+        raise click.ClickException(f"🦈 삭제하지 못했다부우우-\n{error}") from error
+    click.echo(f"🦈 컨테이너 {str(container_id)[:8]}를 삭제했다부우우-")

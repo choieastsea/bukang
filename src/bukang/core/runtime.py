@@ -22,6 +22,34 @@ def list_containers() -> list[tuple[state.ContainerState, bool]]:
     ]
 
 
+def remove(container_id: str) -> None:
+    """종료된 컨테이너의 cgroup, 작업 디렉터리, 상태 파일을 삭제한다"""
+    container = state.load(container_id)
+    if process.is_running(container.pid, container.start_time, container.boot_id):
+        raise RuntimeError("실행 중인 컨테이너는 삭제할 수 없습니다")
+
+    workspace = Path(container.workspace)
+    cgroup_path = Path(container.cgroup_path)
+    expected = state.STATE_ROOT.parent / "workspaces" / container_id
+    # 저장된 경로가 이 컨테이너의 경로인지 확인한 뒤 삭제한다
+    if container.id != container_id or workspace != expected or workspace.is_symlink():
+        raise ValueError("컨테이너의 작업 디렉터리 경로가 올바르지 않습니다")
+    if cgroup_path.name != container_id or cgroup_path.is_symlink():
+        raise ValueError("컨테이너의 cgroup 경로가 올바르지 않습니다")
+
+    # foreground 종료 때 이미 삭제됐거나 이전 rm에서 정리된 자원은 건너뛴다
+    try:
+        cgroup.remove(cgroup_path)
+    except FileNotFoundError:
+        pass
+    try:
+        shutil.rmtree(workspace)
+    except FileNotFoundError:
+        pass
+    # 정리 중 오류가 나면 상태를 남겨 같은 UUID로 다시 시도할 수 있게 한다
+    state.delete(container_id)
+
+
 def _exec_child(
     command: list[str],
     hostname: str,
@@ -206,8 +234,13 @@ def run(
         try:
             # 백그라운드 실행에 성공했다면 자식이 계속 사용할 cgroup을 남긴다
             if group_created and not (detach and completed):
-                cgroup.remove(cgroup_path)
-                event_callback(RunEvent.CGROUP_REMOVED, cgroup_path=cgroup_path)
+                try:
+                    cgroup.remove(cgroup_path)
+                except FileNotFoundError:
+                    # 자식 종료 직후 다른 CLI의 rm이 먼저 정리했을 수 있다
+                    pass
+                else:
+                    event_callback(RunEvent.CGROUP_REMOVED, cgroup_path=cgroup_path)
         finally:
             # 실패 시 자식 종료로 마운트가 사라진 뒤 파일을 지운다
             # 실행에 성공한 컨테이너의 상태와 변경 파일은 이후 rm을 위해 남긴다

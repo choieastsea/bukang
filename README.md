@@ -41,7 +41,6 @@ sudo .venv/bin/bukang run -d ~/tmproot /bin/sleep 300
 `/var/lib/bukang/workspaces/<UUID>/container.log`에 연결합니다.
 입력을 기다리는 셸은 EOF를 받고 바로 종료할 수 있으므로 계속 실행할 명령을 지정합니다.
 백그라운드 컨테이너가 종료돼도 종료 코드는 기록하지 않으며, cgroup과 파일은 남습니다.
-`stop`과 `rm`은 아직 구현하지 않았습니다.
 
 ## 컨테이너 목록
 
@@ -52,3 +51,13 @@ sudo .venv/bin/bukang ps
 저장된 컨테이너의 UUID, PID, 실행 여부, 명령을 표시합니다.
 실행 여부는 저장된 PID·시작 시점·부팅 ID를 현재 호스트 정보와 비교해 판단합니다.
 종료된 컨테이너도 표시하며, 이때 PID는 `-`로 표시합니다.
+
+## 컨테이너 삭제
+
+```bash
+sudo .venv/bin/bukang rm <UUID>
+```
+
+`ps`에 표시된 전체 UUID를 지정합니다. 실행 중이면 삭제를 거부합니다.
+종료된 컨테이너의 cgroup, 작업 디렉터리(변경 파일·로그), 상태 파일을 삭제하며
+입력으로 사용한 원본 rootfs는 유지합니다.
