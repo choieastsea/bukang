@@ -1,1 +1,0 @@
-# (docker 명령어를 사용해서) docker image를 tar로 압축해제
