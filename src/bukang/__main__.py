@@ -1,3 +1,3 @@
-from bukang import main
+from bukang.cli import main
 
 main()

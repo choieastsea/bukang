@@ -5,11 +5,11 @@ description = "부캉이가 만들어주는 컨테이너 런타임"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "textual>=8.2.8",
+    "click>=8.5.0",
 ]
 
 [project.scripts]
-bukang = "bukang:main"
+bukang = "bukang.cli:main"
 
 [build-system]
 requires = ["hatchling"]

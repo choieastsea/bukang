@@ -11,13 +11,13 @@
 ## runtime dependencies
 
 - python 3.13+
-  - cli layer: [textual](https://github.com/textualize/textual)
+  - cli layer: [Click](https://click.palletsprojects.com/)
   - ..?
 
 ## Architecture
 
 - 컨테이너 생성/실행을 위한 런타임
-- 감독 프로세스 (containerd-shim / conmon like) + TUI
+- 감독 프로세스 (containerd-shim / conmon like) + CLI
 
 ## Phase
 
