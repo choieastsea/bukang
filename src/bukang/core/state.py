@@ -60,7 +60,20 @@ def load(container_id: str) -> ContainerState:
 
 def list_states() -> list[ContainerState]:
     """저장된 state.json을 모두 읽어 컨테이너 목록을 반환한다"""
-    return [load(path.parent.name) for path in sorted(STATE_ROOT.glob("*/state.json"))]
+    try:
+        directories = sorted(STATE_ROOT.iterdir())
+    except FileNotFoundError:
+        return []
+    containers = []
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        try:
+            containers.append(load(directory.name))
+        except FileNotFoundError:
+            # 저장 중이거나 다른 CLI가 삭제한 상태 파일은 목록에서 제외한다
+            continue
+    return containers
 
 
 def delete(container_id: str) -> None:

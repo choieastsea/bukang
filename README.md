@@ -30,3 +30,13 @@ bukang run ./rootfs /bin/sh -c 'echo hello'
 메모리는 50 MiB로 제한하고 swap은 비활성화합니다. 종료 코드는 CLI에 전달하며,
 상태와 쓰기 영역은 `/var/lib/bukang` 아래에 보존합니다.
 현재 foreground 실행만 지원하며, 네트워크 격리와 별도 터미널(PTY)은 아직 구성하지 않습니다.
+
+## 컨테이너 목록
+
+```bash
+sudo .venv/bin/bukang ps
+```
+
+저장된 컨테이너의 UUID, PID, 실행 여부, 명령을 표시합니다.
+실행 여부는 저장된 PID·시작 시점·부팅 ID를 현재 호스트 정보와 비교해 판단합니다.
+종료된 컨테이너도 표시하며, 이때 PID는 `-`로 표시합니다.

@@ -1,6 +1,7 @@
 """사용자 입력과 도움말을 담당하는 CLI 계층"""
 
 import shutil
+import shlex
 import sys
 from pathlib import Path
 
@@ -53,11 +54,11 @@ class BukangGroup(click.Group):
         with formatter.section("명령"):
             formatter.write_dl([
                 ("run", "컨테이너를 실행하고, 끝날 때까지 기다린다부우우-"),
+                ("ps", "저장된 컨테이너와 현재 실행 여부를 보여드린다부우우-"),
             ])
         with formatter.section("준비 중인 명령"):
             formatter.write_dl([
                 ("run -d", "컨테이너를 백그라운드로 실행한다크아앙!"),
-                ("ps", "컨테이너 목록과 실행 상태를 보여드린다부우우-"),
                 ("stop", "컨테이너에 종료를 요청한다크아앙!"),
                 ("rm", "종료된 컨테이너의 파일과 남은 자원을 정리한다부우우-"),
             ])
@@ -116,3 +117,31 @@ def run(
         raise click.ClickException(f"실행하지 못했다부우우-\n{error}") from error
     # 컨테이너의 종료 결과를 bukang 명령의 종료 코드로 전달한다
     ctx.exit(exit_code)
+
+
+@main.command(help="저장된 컨테이너와 현재 실행 여부를 보여드린다부우우-")
+@click.help_option("--help", help="목록 조회 방법을 보여드린다부우우-")
+def ps() -> None:
+    """저장된 컨테이너의 UUID, PID, 실행 여부와 명령을 출력한다"""
+    if sys.platform != "linux":
+        raise click.ClickException("실행 상태 조회는 Linux에서 가능하다부우우-")
+
+    from bukang.core import runtime
+
+    try:
+        containers = runtime.list_containers()
+    except (OSError, ValueError, TypeError) as error:
+        # 권한 문제나 잘못된 상태 파일을 빈 목록 또는 종료 상태로 숨기지 않는다
+        raise click.ClickException(f"목록을 읽지 못했다부우우-\n{error}") from error
+    if not containers:
+        click.echo("저장된 컨테이너가 없다부우우-")
+        return
+
+    click.echo("저장된 컨테이너의 현재 상태를 보여드린다부우우-", err=True)
+    click.echo(f"{'UUID':36}  {'PID':>8}  상태     명령")
+    for container, running in containers:
+        status = "실행 중" if running else "종료   "
+        # 종료된 항목의 PID는 재사용될 수 있으므로 현재 PID처럼 표시하지 않는다
+        pid = str(container.pid) if running else "-"
+        command = shlex.join(container.command).replace("\n", "\\n").replace("\r", "\\r")
+        click.echo(f"{container.id:36}  {pid:>8}  {status}  {command}")

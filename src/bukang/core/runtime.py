@@ -12,6 +12,16 @@ from bukang.linux import cgroup, filesystem, namespace, process
 from bukang.linux.namespace import Namespace
 
 
+def list_containers() -> list[tuple[state.ContainerState, bool]]:
+    """저장된 컨테이너마다 현재 프로세스가 살아 있는지 확인해 반환한다"""
+    return [
+        (container, process.is_running(
+            container.pid, container.start_time, container.boot_id,
+        ))
+        for container in state.list_states()
+    ]
+
+
 def _exec_child(
     command: list[str],
     hostname: str,
