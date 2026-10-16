@@ -2,14 +2,25 @@
 
 import os
 import socket
+from enum import IntFlag
 
 
-def unshare(flags: int) -> None:
+class Namespace(IntFlag):
+    """분리하거나 진입할 namespace 종류"""
+
+    PID = os.CLONE_NEWPID
+    MOUNT = os.CLONE_NEWNS
+    UTS = os.CLONE_NEWUTS
+    IPC = os.CLONE_NEWIPC
+    NETWORK = os.CLONE_NEWNET
+
+
+def unshare(flags: Namespace) -> None:
     """지정한 namespace를 분리한다. PID namespace는 이후 생성할 자식에 적용된다"""
     os.unshare(flags)
 
 
-def setns(fd: int, nstype: int = 0) -> None:
+def setns(fd: int, nstype: Namespace) -> None:
     """FD가 가리키는 namespace에 진입한다. PID는 이후 생성할 자식에 적용된다"""
     os.setns(fd, nstype)
 
