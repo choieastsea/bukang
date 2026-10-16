@@ -6,7 +6,31 @@ from pathlib import Path
 
 import click
 
+from bukang.core.events import RunEvent
+
 from .image import render_bukang_image
+
+
+def narrate(event: RunEvent, **details: object) -> None:
+    """runtime이 전달한 단계와 값을 부캉이 안내 문구로 출력한다"""
+    messages = {
+        RunEvent.PREPARING: "컨테이너 {container_id}를 rootfs {rootfs}로 준비한다크아앙!",
+        RunEvent.WORKSPACE_READY: "{workspace} 아래에 upper·work·merged를 만들었다부우우-",
+        RunEvent.LIMITS_CONFIGURED: "메모리 {memory_bytes}바이트, swap {swap_bytes}바이트 제한을 설정했다부우우-",
+        RunEvent.CHILD_CREATED: "새 PID namespace에 자식을 만들었다, 호스트 PID는 {pid}다크아앙!",
+        RunEvent.CGROUP_READY: "호스트 PID {pid}를 {cgroup_path}에 등록했다부우우-",
+        RunEvent.STATE_SAVED: "컨테이너 실행 정보를 {state_path}에 저장했다부우우-",
+        RunEvent.EXITED: "컨테이너 프로세스가 종료 코드 {exit_code}로 끝났다부우우-",
+        RunEvent.CGROUP_REMOVED: "cgroup {cgroup_path}를 삭제했다부우우-",
+    }
+    # 문장 조합과 단위 표시는 CLI가 맡고 runtime은 실제 값만 전달한다
+    message = messages[event].format_map(details)
+    if event is RunEvent.LIMITS_CONFIGURED and details["cpu_quota_us"] is not None:
+        message += (
+            "\nCPU는 {cpu_period_us}마이크로초마다 {cpu_quota_us}마이크로초까지 쓰게 했다부우우-"
+        ).format_map(details)
+    # 안내는 stderr로 보내 컨테이너 명령의 stdout과 구분한다
+    click.echo(message, err=True)
 
 
 class BukangGroup(click.Group):
@@ -82,11 +106,11 @@ def run(
     # Linux 전용 os 상수를 쓰는 runtime은 run 시에만 불러와 다른 OS에서도 help가 열리게 한다
     from bukang.core import runtime
 
-    click.echo("namespace·rootfs·cgroup을 준비해 실행한다크아앙!", err=True)
     try:
         exit_code = runtime.run(
             command=list(command), hostname=hostname, rootfs=rootfs,
             cgroup_parent=cgroup_parent,
+            event_callback=narrate,
         )
     except (OSError, ValueError, RuntimeError) as error:
         raise click.ClickException(f"실행하지 못했다부우우-\n{error}") from error

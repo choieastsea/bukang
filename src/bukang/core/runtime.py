@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from bukang.core import state
+from bukang.core.events import EventCallback, RunEvent
 from bukang.linux import cgroup, filesystem, namespace, process
 from bukang.linux.namespace import Namespace
 
@@ -56,11 +57,13 @@ def run(
     hostname: str,
     rootfs: Path,
     cgroup_parent: Path,
+    event_callback: EventCallback,
     memory_bytes: int = 50 * 1024 * 1024,
     cpu_quota_us: int | None = None,
 ) -> int:
     """컨테이너를 실행하고 종료 코드를 반환한다
 
+    진행 단계와 관련 값은 부모에서 event_callback로 전달한다
     종료 후에도 state.json과 컨테이너에서 변경한 파일은 삭제하지 않는다
     """
     if not command:
@@ -75,6 +78,8 @@ def run(
     if workspace.is_relative_to(rootfs) or rootfs.is_relative_to(workspace):
         raise ValueError("rootfs와 실행 디렉터리는 서로 포함될 수 없습니다")
 
+    # 출력 문구는 CLI가 정한다 자식에는 콜백을 전달하지 않는다
+    event_callback(RunEvent.PREPARING, container_id=container_id, rootfs=rootfs)
     # 중간에 실패해도 실제로 만든 자원만 정리하기 위해 기록한다
     pid = None
     fds = []
@@ -87,11 +92,17 @@ def run(
         # upper: 변경 파일, work: OverlayFS 내부 작업, merged: 합쳐진 파일을 볼 경로
         for name in ("upper", "work", "merged"):
             (workspace / name).mkdir()
+        event_callback(RunEvent.WORKSPACE_READY, workspace=workspace)
         cgroup.create(cgroup_path)
         group_created = True
         cgroup.set_memory(cgroup_path, memory_bytes)
         if cpu_quota_us is not None:
             cgroup.set_cpu(cgroup_path, cpu_quota_us)
+        event_callback(
+            RunEvent.LIMITS_CONFIGURED,
+            memory_bytes=memory_bytes, swap_bytes=0,
+            cpu_quota_us=cpu_quota_us, cpu_period_us=100_000,
+        )
 
         # fork 후 부모의 '다음 자식이 들어갈 PID namespace'를 되돌릴 때 사용한다
         original_pid_fd = os.open("/proc/self/ns/pid", os.O_RDONLY)
@@ -115,11 +126,13 @@ def run(
             # 자식은 exec 또는 _exit로 끝난다 이 부분은 부모가 수행한다
             namespace.setns(original_pid_fd, Namespace.PID)
 
+        event_callback(RunEvent.CHILD_CREATED, pid=pid)
         # 부모는 오류를 읽는 쪽과 준비 완료를 쓰는 쪽만 남긴다
         for fd in (original_pid_fd, error_write, ready_read):
             os.close(fd)
             fds.remove(fd)
         cgroup.add_process(cgroup_path, pid)
+        event_callback(RunEvent.CGROUP_READY, pid=pid, cgroup_path=cgroup_path)
         # 자식이 기다리는 동안 식별 정보를 읽는다 PID 재사용은 시작 시점과 부팅 ID로 구분한다
         container = state.ContainerState(
             id=container_id,
@@ -143,12 +156,18 @@ def run(
         # 초기화 오류가 보고되지 않았을 때 저장하고, foreground 실행이 끝날 때까지 기다린다
         state.save(container)
         saved_state = container
+        event_callback(
+            RunEvent.STATE_SAVED,
+            state_path=state.STATE_ROOT / container_id / "state.json",
+        )
         _, status = os.waitpid(pid, 0)
         pid = None
         completed = True
         exit_code = os.waitstatus_to_exitcode(status)
         # 시그널 종료는 -시그널 번호로 나오므로 셸 관례인 128 + 시그널 번호로 바꾼다
-        return exit_code if exit_code >= 0 else 128 - exit_code
+        exit_code = exit_code if exit_code >= 0 else 128 - exit_code
+        event_callback(RunEvent.EXITED, exit_code=exit_code)
+        return exit_code
     except BaseException:
         # 부모 작업이 실패하면 자식을 종료시키고 waitpid로 종료 결과를 회수한다
         if pid is not None and pid > 0:
@@ -164,6 +183,7 @@ def run(
         try:
             if group_created:
                 cgroup.remove(cgroup_path)
+                event_callback(RunEvent.CGROUP_REMOVED, cgroup_path=cgroup_path)
         finally:
             # 자식 종료로 mount namespace와 마운트가 사라진 뒤 실패한 실행의 파일을 지운다
             # 끝까지 실행한 컨테이너의 상태와 변경 파일은 나중에 rm으로 지울 수 있게 남긴다
