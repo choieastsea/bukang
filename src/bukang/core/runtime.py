@@ -5,7 +5,8 @@ import shutil
 import signal
 from pathlib import Path
 
-from bukang.linux import cgroup, filesystem, namespace
+from bukang.core import state
+from bukang.linux import cgroup, filesystem, namespace, process
 from bukang.linux.namespace import Namespace
 
 
@@ -51,7 +52,7 @@ def run(
     memory_bytes: int = 50 * 1024 * 1024,
     cpu_quota_us: int | None = None,
 ) -> int:
-    """rootfs와 자원 제한을 적용해 실행하고 종료 후 쓰기 영역은 보존한다"""
+    """격리 환경에서 실행하고 종료 후 상태와 쓰기 영역을 보존한다"""
     if not command:
         raise ValueError("실행할 명령이 필요합니다")
     rootfs = rootfs.resolve(strict=True)
@@ -66,6 +67,7 @@ def run(
     fds = []
     group_created = False
     completed = False
+    saved_state = None
     workspace.mkdir()
     try:
         for name in ("upper", "work", "merged"):
@@ -98,17 +100,27 @@ def run(
             os.close(fd)
             fds.remove(fd)
         cgroup.add_process(cgroup_path, pid)
+        container = state.ContainerState(
+            command=command,
+            pid=pid,
+            start_time=process.get_start_time(pid),
+            boot_id=process.get_boot_id(),
+            workspace=str(workspace),
+            cgroup_path=str(cgroup_path),
+        )
         os.write(ready_write, b"1")
         os.close(ready_write)
         fds.remove(ready_write)
 
         # exec 성공 시 상속되지 않는 파이프가 닫혀 EOF를 받는다
         error = os.read(error_read, 4096)
-        _, status = os.waitpid(pid, 0)
-        pid = None
         if error:
             raise RuntimeError(error.decode(errors="replace"))
 
+        state.save(container)
+        saved_state = container
+        _, status = os.waitpid(pid, 0)
+        pid = None
         completed = True
         exit_code = os.waitstatus_to_exitcode(status)
         return exit_code if exit_code >= 0 else 128 - exit_code
@@ -130,3 +142,5 @@ def run(
             # 자식 종료로 전용 mount namespace가 사라진 뒤 디렉터리를 정리한다
             if not completed:
                 shutil.rmtree(workspace)
+                if saved_state is not None:
+                    state.delete(saved_state.id)
