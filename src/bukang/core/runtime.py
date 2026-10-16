@@ -89,7 +89,10 @@ def run(
         raise ValueError("rootfs와 실행 디렉터리는 서로 포함될 수 없습니다")
 
     # 출력 문구는 CLI가 정한다 자식에는 콜백을 전달하지 않는다
-    event_callback(RunEvent.PREPARING, container_id=container_id, rootfs=rootfs)
+    event_callback(
+        RunEvent.PREPARING,
+        container_id=container_id, rootfs=rootfs, hostname=hostname,
+    )
     # 중간에 실패해도 실제로 만든 자원만 정리하기 위해 기록한다
     pid = None
     fds = []
