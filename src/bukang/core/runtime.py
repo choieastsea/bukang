@@ -30,6 +30,7 @@ def _exec_child(
     ready_fd: int,
     error_fd: int,
     parent_fds: tuple[int, ...],
+    detach: bool,
 ) -> None:
     """부모가 cgroup에 등록할 때까지 기다린 뒤 namespace와 rootfs를 설정하고 명령을 실행한다"""
     try:
@@ -40,6 +41,9 @@ def _exec_child(
         if os.read(ready_fd, 1) != b"1":
             raise RuntimeError("부모가 초기화를 중단했습니다")
         os.close(ready_fd)
+
+        if detach:
+            process.detach(workspace / "container.log")
 
         # PID namespace는 이미 fork 때 적용됐으므로 hostname과 마운트만 분리한다
         namespace.unshare(Namespace.UTS | Namespace.MOUNT)
@@ -70,8 +74,9 @@ def run(
     event_callback: EventCallback,
     memory_bytes: int = 50 * 1024 * 1024,
     cpu_quota_us: int | None = None,
-) -> int:
-    """컨테이너를 실행하고 종료 코드를 반환한다
+    detach: bool = False,
+) -> int | str:
+    """컨테이너를 실행하고 종료 코드 또는 백그라운드 컨테이너의 UUID를 반환한다
 
     진행 단계와 관련 값은 부모에서 event_callback로 전달한다
     종료 후에도 state.json과 컨테이너에서 변경한 파일은 삭제하지 않는다
@@ -134,6 +139,7 @@ def run(
                 _exec_child(
                     command, hostname, rootfs, workspace, ready_read, error_write,
                     (original_pid_fd, error_read, ready_write),
+                    detach,
                 )
         finally:
             # 자식은 exec 또는 _exit로 끝난다 이 부분은 부모가 수행한다
@@ -166,13 +172,17 @@ def run(
         if error:
             raise RuntimeError(error.decode(errors="replace"))
 
-        # 초기화 오류가 보고되지 않았을 때 저장하고, foreground 실행이 끝날 때까지 기다린다
+        # 초기화 오류가 보고되지 않았을 때 저장한다 foreground일 때만 종료를 기다린다
         state.save(container)
         saved_state = container
         event_callback(
             RunEvent.STATE_SAVED,
             state_path=state.STATE_ROOT / container_id / "state.json",
         )
+        if detach:
+            # 초기화 확인과 상태 저장이 끝났으므로 자식을 기다리지 않고 부모를 종료한다
+            completed = True
+            return container_id
         _, status = os.waitpid(pid, 0)
         pid = None
         completed = True
@@ -194,12 +204,13 @@ def run(
         for fd in fds:
             os.close(fd)
         try:
-            if group_created:
+            # 백그라운드 실행에 성공했다면 자식이 계속 사용할 cgroup을 남긴다
+            if group_created and not (detach and completed):
                 cgroup.remove(cgroup_path)
                 event_callback(RunEvent.CGROUP_REMOVED, cgroup_path=cgroup_path)
         finally:
-            # 자식 종료로 mount namespace와 마운트가 사라진 뒤 실패한 실행의 파일을 지운다
-            # 끝까지 실행한 컨테이너의 상태와 변경 파일은 나중에 rm으로 지울 수 있게 남긴다
+            # 실패 시 자식 종료로 마운트가 사라진 뒤 파일을 지운다
+            # 실행에 성공한 컨테이너의 상태와 변경 파일은 이후 rm을 위해 남긴다
             if not completed:
                 shutil.rmtree(workspace)
                 if saved_state is not None:

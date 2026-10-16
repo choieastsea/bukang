@@ -1,6 +1,18 @@
 """Linux 프로세스 식별 정보 조회"""
 
+import os
 from pathlib import Path
+
+
+def detach(log_path: Path) -> None:
+    """터미널에서 분리하고 입력은 /dev/null, 출력은 로그 파일로 연결한다"""
+    os.setsid()
+    # rootfs를 바꾸기 전에 호스트 파일을 열고 표준 입출력 FD로 복사한다
+    with open("/dev/null", "rb") as stdin, log_path.open("xb") as log:
+        os.chmod(log_path, 0o600)
+        os.dup2(stdin.fileno(), 0)
+        os.dup2(log.fileno(), 1)
+        os.dup2(log.fileno(), 2)
 
 
 def _read_stat(pid: int) -> list[str]:

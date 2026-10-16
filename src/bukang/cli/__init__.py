@@ -69,11 +69,11 @@ class BukangGroup(click.Group):
         with formatter.section("명령"):
             formatter.write_dl([
                 ("run", "🦈 컨테이너를 실행하고, 끝날 때까지 기다린다부우우-"),
+                ("run -d", "🦈 컨테이너를 백그라운드로 실행한다크아앙!"),
                 ("ps", "🦈 저장된 컨테이너와 현재 실행 여부를 보여드린다부우우-"),
             ])
         with formatter.section("준비 중인 명령"):
             formatter.write_dl([
-                ("run -d", "🦈 컨테이너를 백그라운드로 실행한다크아앙!"),
                 ("stop", "🦈 컨테이너에 종료를 요청한다크아앙!"),
                 ("rm", "🦈 종료된 컨테이너의 파일과 남은 자원을 정리한다부우우-"),
             ])
@@ -98,6 +98,10 @@ def main(ctx: click.Context) -> None:
 @click.argument("rootfs", type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.argument("command", nargs=-1, required=True, type=click.UNPROCESSED)
 @click.option(
+    "-d", "--detach", is_flag=True,
+    help="🦈 출력을 로그에 저장하고 백그라운드로 실행한다부우우-",
+)
+@click.option(
     "--hostname", default="bukang", show_default=True,
     help="🦈 컨테이너의 hostname을 정한다부우우-",
 )
@@ -114,6 +118,7 @@ def run(
     command: tuple[str, ...],
     hostname: str,
     cgroup_parent: Path,
+    detach: bool,
 ) -> None:
     """입력받은 명령을 runtime에 전달하고 종료 코드를 반환한다"""
     if sys.platform != "linux":
@@ -123,15 +128,21 @@ def run(
     from bukang.core import runtime
 
     try:
-        exit_code = runtime.run(
+        result = runtime.run(
             command=list(command), hostname=hostname, rootfs=rootfs,
             cgroup_parent=cgroup_parent,
             event_callback=narrate,
+            detach=detach,
         )
     except (OSError, ValueError, RuntimeError) as error:
         raise click.ClickException(f"🦈 실행하지 못했다부우우-\n{error}") from error
-    # 컨테이너의 종료 결과를 bukang 명령의 종료 코드로 전달한다
-    ctx.exit(exit_code)
+    if isinstance(result, str):
+        click.echo("🦈 백그라운드 실행을 시작했다부우우-", err=True)
+        # UUID만 stdout에 출력해 셸 변수로 받을 수 있게 한다
+        click.echo(result)
+        return
+    # foreground에서는 컨테이너의 종료 결과를 CLI 종료 코드로 전달한다
+    ctx.exit(result)
 
 
 @main.command(help="🦈 저장된 컨테이너와 현재 실행 여부를 보여드린다부우우-")

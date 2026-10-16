@@ -29,7 +29,19 @@ bukang run ./rootfs /bin/sh -c 'echo hello'
 부캉이 옵션은 rootfs 앞에 쓰고, 실행할 명령과 인자는 뒤에 씁니다.
 메모리는 50 MiB로 제한하고 swap은 비활성화합니다. 종료 코드는 CLI에 전달하며,
 상태와 쓰기 영역은 `/var/lib/bukang` 아래에 보존합니다.
-현재 foreground 실행만 지원하며, 네트워크 격리와 별도 터미널(PTY)은 아직 구성하지 않습니다.
+네트워크 격리와 별도 터미널(PTY)은 아직 구성하지 않습니다.
+
+`-d`를 지정하면 초기화와 상태 저장 후 UUID를 출력하고 CLI가 종료됩니다.
+
+```bash
+sudo .venv/bin/bukang run -d ~/tmproot /bin/sleep 300
+```
+
+컨테이너의 stdin은 `/dev/null`, stdout과 stderr는
+`/var/lib/bukang/workspaces/<UUID>/container.log`에 연결합니다.
+입력을 기다리는 셸은 EOF를 받고 바로 종료할 수 있으므로 계속 실행할 명령을 지정합니다.
+백그라운드 컨테이너가 종료돼도 종료 코드는 기록하지 않으며, cgroup과 파일은 남습니다.
+`stop`과 `rm`은 아직 구현하지 않았습니다.
 
 ## 컨테이너 목록
 
