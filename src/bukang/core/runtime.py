@@ -84,7 +84,7 @@ def _exec_child(
         # 합쳐진 파일시스템을 /로 바꾼 뒤, 컨테이너 PID를 보여주는 /proc을 붙인다
         filesystem.pivot_root(workspace / "merged")
         filesystem.mount_proc()
-        # 새 프로세스를 만드는 것이 아니라 현재 자식의 프로그램을 교체한다
+        # 현재 자식의 프로그램을 입력받은 거로 교체한다
         os.execvp(command[0], command)
     except BaseException as error:
         message = f"{type(error).__name__}: {error}".encode()
@@ -115,6 +115,7 @@ def run(
     container_id = str(uuid4())
     rootfs = rootfs.resolve(strict=True)
     workspace = (state.STATE_ROOT.parent / "workspaces" / container_id).resolve()
+    # 컨테이너 별 cgroup
     cgroup_path = cgroup_parent.resolve(strict=True) / container_id
     if not rootfs.is_dir():
         raise ValueError("rootfs는 디렉터리여야 합니다")
@@ -132,6 +133,7 @@ def run(
     group_created = False
     completed = False
     saved_state = None
+    # 소유자만 접근 가능한 컨테이너별 디렉터리 생성
     workspace.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     workspace.mkdir(mode=0o700)
     try:
@@ -150,9 +152,6 @@ def run(
             cpu_quota_us=cpu_quota_us, cpu_period_us=100_000,
         )
 
-        # fork 후 부모의 '다음 자식이 들어갈 PID namespace'를 되돌릴 때 사용한다
-        original_pid_fd = os.open("/proc/self/ns/pid", os.O_RDONLY)
-        fds.append(original_pid_fd)
         # error: 자식 → 부모 오류 전달, ready: 부모 → 자식 준비 완료 전달
         error_read, error_write = os.pipe()
         fds.extend((error_read, error_write))
@@ -161,21 +160,17 @@ def run(
 
         # 부모의 PID는 그대로이고, 다음 fork로 생기는 자식이 새 namespace의 PID 1이 된다
         namespace.unshare(Namespace.PID)
-        try:
-            pid = os.fork()
-            if pid == 0:
-                _exec_child(
-                    command, hostname, rootfs, workspace, ready_read, error_write,
-                    (original_pid_fd, error_read, ready_write),
-                    detach,
-                )
-        finally:
-            # 자식은 exec 또는 _exit로 끝난다 이 부분은 부모가 수행한다
-            namespace.setns(original_pid_fd, Namespace.PID)
+        pid = os.fork()
+        if pid == 0:
+            _exec_child(
+                command, hostname, rootfs, workspace, ready_read, error_write,
+                (error_read, ready_write),
+                detach,
+            )
 
         event_callback(RunEvent.CHILD_CREATED, pid=pid)
         # 부모는 오류를 읽는 쪽과 준비 완료를 쓰는 쪽만 남긴다
-        for fd in (original_pid_fd, error_write, ready_read):
+        for fd in (error_write, ready_read):
             os.close(fd)
             fds.remove(fd)
         cgroup.add_process(cgroup_path, pid)
